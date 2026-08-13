@@ -1,16 +1,27 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Project } from "../lib/types";
-import { addProject, deleteProject, getProjects, subscribeProjects } from "../lib/storage";
-import type { NewProjectInput } from "../lib/storage";
+import {
+  addProject,
+  deleteProject,
+  getProjects,
+  subscribeProjects,
+  syncProjectContent,
+  updateProject,
+} from "../lib/storage";
+import type { NewProjectInput, SyncResult } from "../lib/storage";
 import { AddProjectForm } from "./components/AddProjectForm";
 import { ProjectList } from "./components/ProjectList";
+import { ProjectDetail } from "./components/ProjectDetail";
 
-// Phase 1: plain list of projects (name + category), add form, delete per row.
-// No styling pass yet — that's Phase 4 (see phases.md).
+// Phase 2: project detail view (raw markdown + re-sync) reachable by clicking
+// a row. Still no styling pass beyond the mono raw-markdown exception — the
+// real design pass is Phase 4 (see phases.md).
 export function App() {
   const [projects, setProjects] = useState<Project[] | null>(null); // null = loading
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +49,10 @@ export function App() {
     };
   }, []);
 
+  const selectedProject = selectedId
+    ? (projects ?? []).find((p) => p.id === selectedId) ?? null
+    : null;
+
   async function handleAdd(input: NewProjectInput) {
     const project = await addProject(input); // rejects → AddProjectForm shows inline error
     setProjects((prev) => (prev ? [...prev, project] : [project]));
@@ -51,6 +66,39 @@ export function App() {
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Couldn't delete project — try again.");
     }
+  }
+
+  function handleSelect(id: string) {
+    setSelectedId(id);
+    setDetailError(null);
+    // architecture.md §3: lastViewedAt moves when the detail view opens.
+    void updateProject(id, { lastViewedAt: new Date().toISOString() }).catch((err) => {
+      setDetailError(err instanceof Error ? err.message : "Couldn't update project — try again.");
+    });
+  }
+
+  async function handleSync(id: string, newContent: string): Promise<SyncResult> {
+    const result = await syncProjectContent(id, newContent); // rejects → ProjectDetail shows error
+    setProjects((prev) => (prev ?? []).map((p) => (p.id === id ? result.project : p)));
+    return result;
+  }
+
+  function handleBack() {
+    setSelectedId(null);
+    setDetailError(null);
+  }
+
+  if (selectedProject) {
+    return (
+      <div class="panel">
+        <header class="panel-header">
+          <span class="brand">Breadcrumb</span>
+        </header>
+        <main class="panel-body">
+          <ProjectDetail project={selectedProject} onBack={handleBack} onSync={handleSync} error={detailError} />
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -74,7 +122,7 @@ export function App() {
               {loadError}
             </p>
           ) : (
-            <ProjectList projects={projects} onDelete={handleDelete} />
+            <ProjectList projects={projects} onSelect={handleSelect} onDelete={handleDelete} />
           )}
         </section>
       </main>

@@ -16,6 +16,7 @@ import {
   getProjects,
   PROJECTS_KEY,
   subscribeProjects,
+  syncProjectContent,
   updateProject,
 } from "./storage";
 
@@ -148,6 +149,78 @@ describe("storage", () => {
 
   it("rejects deletes for an unknown project id", async () => {
     await expect(deleteProject("ghost")).rejects.toThrow(/ghost/);
+  });
+
+  describe("markdown content (Phase 2)", () => {
+    it("stores pasted/uploaded content as-is at add time", async () => {
+      const content = "# Notes\n\n- [x] read chapter 2\n";
+      const project = await addProject({
+        name: "Reading group",
+        category: "community",
+        mdRawContent: content,
+      });
+
+      expect(project.mdRawContent).toBe(content);
+      expect(project.mdSource).toEqual({ type: "manual", lastPastedAt: project.createdAt });
+      expect((await getProjects())[0].mdRawContent).toBe(content);
+    });
+
+    it("keeps the empty default when no markdown is provided", async () => {
+      const project = await addProject({ name: "Plain", category: "personal" });
+      expect(project.mdRawContent).toBe("");
+    });
+
+    it("is a no-op when re-synced content is identical (timestamp untouched, no write)", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({
+          name: "A",
+          category: "personal",
+          mdRawContent: "same content",
+        });
+        const storedBefore = store.get(PROJECTS_KEY);
+
+        const result = await syncProjectContent(project.id, "same content");
+
+        expect(result.changed).toBe(false);
+        expect(result.project.lastContentChangeAt).toBe(project.lastContentChangeAt);
+        // Reference-identical stored array proves no write happened at all.
+        expect(store.get(PROJECTS_KEY)).toBe(storedBefore);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("bumps lastContentChangeAt and records the manual source only on real change", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({
+          name: "A",
+          category: "personal",
+          mdRawContent: "v1",
+        });
+
+        vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"));
+        const result = await syncProjectContent(project.id, "v2");
+
+        expect(result.changed).toBe(true);
+        expect(result.project.mdRawContent).toBe("v2");
+        expect(result.project.lastContentChangeAt).toBe("2026-01-01T00:05:00.000Z");
+        expect(result.project.mdSource).toEqual({
+          type: "manual",
+          lastPastedAt: "2026-01-01T00:05:00.000Z",
+        });
+        expect(store.get(PROJECTS_KEY)).toEqual([result.project]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("rejects re-sync for an unknown project id", async () => {
+      await expect(syncProjectContent("ghost", "x")).rejects.toThrow(/ghost/);
+    });
   });
 
   it("notifies subscribers on project changes from another context", async () => {

@@ -111,8 +111,9 @@ body {
   color: var(--text-secondary);
 }
 
-input,
-select {
+input:not([type="file"]),
+select,
+textarea {
   background: var(--surface-raised);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -120,6 +121,11 @@ select {
   padding: 7px 9px;
   font-size: var(--text-body);
   font-family: var(--font-ui);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 96px;
 }
 
 .form-error {
@@ -192,4 +198,46 @@ select {
 .btn-delete:hover {
   color: var(--text-secondary);
   border-color: var(--text-secondary);
+}
+
+/* ---- Phase 2: project detail view ---- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-raw {
+  /* Phase 2 exception: raw markdown renders in the mono type tokens
+     (design.md §3) — the one place Phase 4 type tokens are pulled early.
+     Everything else in this phase stays functionally plain. */
+  margin: 0;
+  padding: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
 }

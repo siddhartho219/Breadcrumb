@@ -4,8 +4,9 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 1 — Data layer.** Projects can be created, stored, listed, and
-deleted, persisted in `chrome.storage.local`. No markdown input or checkpoint
+**Phase 2 — Markdown input.** Projects can attach markdown content via paste
+or `.md` file upload, view it in a detail view, and manually re-sync it
+(`lastContentChangeAt` only moves on real content changes). No checkpoint
 parsing yet — see `phases.md` for what's next.
 
 ## Planning docs
@@ -43,9 +44,9 @@ from `dist/` the same way.
 npm run test
 ```
 
-One suite exists: `src/lib/storage.test.ts` (storage CRUD against a mocked
-`chrome.storage.local`). The parser heuristics (Phase 3) get their own
-coverage per `rules.md`.
+One suite exists: `src/lib/storage.test.ts` — CRUD, markdown add/re-sync
+semantics, and the pub/sub, against a mocked `chrome.storage.local`. The
+parser heuristics (Phase 3) get their own coverage per `rules.md`.
 
 ## A note on versions
 

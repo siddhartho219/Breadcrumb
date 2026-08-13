@@ -19,6 +19,14 @@ export interface NewProjectInput {
   name: string;
   category: Category;
   customCategoryLabel?: string;
+  /** Optional at add time — Phase 2 lets the form collect it; empty keeps the default. */
+  mdRawContent?: string;
+}
+
+/** Result of a re-sync: the stored project plus whether anything actually changed. */
+export interface SyncResult {
+  project: Project;
+  changed: boolean;
 }
 
 // Defined fallback per rules.md section 3 — never crash, always have a value.
@@ -78,14 +86,14 @@ export async function addProject(input: NewProjectInput): Promise<Project> {
   }
 
   const now = nowIso();
-  // Fields the Phase 1 UI doesn't collect yet get sensible defaults (per
-  // phases.md) so the stored shape is complete from day one.
+  // Fields the UI doesn't collect yet get sensible defaults (per phases.md)
+  // so the stored shape is complete from day one.
   const project: Project = {
     id: newId(),
     name,
     category: input.category,
     customCategoryLabel,
-    mdRawContent: "",
+    mdRawContent: input.mdRawContent ?? "",
     mdSource: { type: "manual", lastPastedAt: now },
     checkpoint: { ...DEFAULT_CHECKPOINT },
     createdAt: now,
@@ -124,6 +132,49 @@ export async function updateProject(id: string, patch: Partial<Project>): Promis
     throw new Error("Couldn't save changes — try again.", { cause: err });
   }
   return updated;
+}
+
+/**
+ * Manual re-sync (phases.md Phase 2): replaces a project's markdown content
+ * with freshly pasted/uploaded text. `lastContentChangeAt` ("last worked")
+ * only moves when the new content actually differs from what's stored — an
+ * identical re-sync performs no write at all. Re-syncing always records a
+ * manual source, which also overrides a future fsa connection (Phase 5).
+ */
+export async function syncProjectContent(id: string, newContent: string): Promise<SyncResult> {
+  let projects: Project[];
+  try {
+    projects = await readProjects();
+  } catch (err) {
+    throw new Error("Couldn't load projects — try again.", { cause: err });
+  }
+
+  const index = projects.findIndex((p) => p.id === id);
+  if (index === -1) {
+    throw new Error(`Couldn't find a project with id "${id}".`);
+  }
+
+  const current = projects[index];
+  // Direct string comparison — no timestamp bump (and no write) for a no-op.
+  if (current.mdRawContent === newContent) {
+    return { project: current, changed: false };
+  }
+
+  const now = nowIso();
+  const updated: Project = {
+    ...current,
+    mdRawContent: newContent,
+    mdSource: { type: "manual", lastPastedAt: now },
+    lastContentChangeAt: now,
+  };
+  projects[index] = updated;
+
+  try {
+    await writeProjects(projects);
+  } catch (err) {
+    throw new Error("Couldn't save changes — try again.", { cause: err });
+  }
+  return { project: updated, changed: true };
 }
 
 export async function deleteProject(id: string): Promise<void> {
