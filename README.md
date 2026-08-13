@@ -4,10 +4,10 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 2 — Markdown input.** Projects can attach markdown content via paste
-or `.md` file upload, view it in a detail view, and manually re-sync it
-(`lastContentChangeAt` only moves on real content changes). No checkpoint
-parsing yet — see `phases.md` for what's next.
+**Phase 3 — Checkpoint engine.** Markdown content is turned into a checkpoint
+automatically (Progress/Status line → checkbox → heading → paragraph
+fallback) and shown in the list and detail view. No dashboard styling,
+progress bar, or staleness indicators yet — see `phases.md` for what's next.
 
 ## Planning docs
 
@@ -44,9 +44,11 @@ from `dist/` the same way.
 npm run test
 ```
 
-One suite exists: `src/lib/storage.test.ts` — CRUD, markdown add/re-sync
-semantics, and the pub/sub, against a mocked `chrome.storage.local`. The
-parser heuristics (Phase 3) get their own coverage per `rules.md`.
+Two suites exist:
+- `src/lib/storage.test.ts` — CRUD, markdown add/re-sync semantics, checkpoint
+  wiring, and the pub/sub, against a mocked `chrome.storage.local`.
+- `src/lib/parser/parser.test.ts` — the checkpoint heuristics, per `rules.md`
+  (the one place tests are non-negotiable).
 
 ## A note on versions
 

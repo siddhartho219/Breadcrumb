@@ -11,7 +11,8 @@
 // their own state from return values, and `subscribeProjects()` lets any
 // context (background worker, options page) notify the panel of changes.
 
-import type { Category, Checkpoint, Project } from "./types";
+import type { Category, Project } from "./types";
+import { parse } from "./parser";
 
 export const PROJECTS_KEY = "projects";
 
@@ -28,12 +29,6 @@ export interface SyncResult {
   project: Project;
   changed: boolean;
 }
-
-// Defined fallback per rules.md section 3 — never crash, always have a value.
-const DEFAULT_CHECKPOINT: Checkpoint = {
-  text: "No checkpoint detected yet",
-  detectedFrom: "inferred",
-};
 
 function newId(): string {
   return crypto.randomUUID();
@@ -95,7 +90,9 @@ export async function addProject(input: NewProjectInput): Promise<Project> {
     customCategoryLabel,
     mdRawContent: input.mdRawContent ?? "",
     mdSource: { type: "manual", lastPastedAt: now },
-    checkpoint: { ...DEFAULT_CHECKPOINT },
+    // Phase 3: checkpoint is derived from whatever content exists. parse()
+    // never throws and returns the defined default for empty content.
+    checkpoint: parse(input.mdRawContent ?? ""),
     createdAt: now,
     lastContentChangeAt: now,
     lastViewedAt: now,
@@ -123,7 +120,18 @@ export async function updateProject(id: string, patch: Partial<Project>): Promis
     throw new Error(`Couldn't find a project with id "${id}".`);
   }
 
-  const updated: Project = { ...projects[index], ...patch, id };
+  // Data invariant (Phase 3): the stored checkpoint must always match the
+  // stored markdown. If a caller patches mdRawContent through this generic
+  // path without providing a checkpoint of its own, recompute it here so the
+  // two can never drift apart.
+  const checkpoint =
+    patch.checkpoint !== undefined
+      ? patch.checkpoint
+      : patch.mdRawContent !== undefined
+        ? parse(patch.mdRawContent)
+        : projects[index].checkpoint;
+
+  const updated: Project = { ...projects[index], ...patch, id, checkpoint };
   projects[index] = updated;
 
   try {
@@ -164,6 +172,8 @@ export async function syncProjectContent(id: string, newContent: string): Promis
   const updated: Project = {
     ...current,
     mdRawContent: newContent,
+    // Phase 3: re-derive the checkpoint from the new content on every change.
+    checkpoint: parse(newContent),
     mdSource: { type: "manual", lastPastedAt: now },
     lastContentChangeAt: now,
   };

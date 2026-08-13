@@ -33,7 +33,14 @@ export function ProjectRow({ project, onSelect, onDelete }: Props) {
       onClick={() => onSelect(project.id)}
       onKeyDown={handleKeyDown}
     >
-      <span class="project-name">{project.name}</span>
+      <div class="project-main">
+        <span class="project-name">{project.name}</span>
+        {project.checkpoint.text && (
+          <span class="project-checkpoint" title={project.checkpoint.text}>
+            {project.checkpoint.text}
+          </span>
+        )}
+      </div>
       <span class="category-tag">{categoryLabel}</span>
       <button type="button" class="btn-delete" onClick={handleDelete}>
         Delete

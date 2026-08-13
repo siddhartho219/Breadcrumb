@@ -71,6 +71,11 @@ export function ProjectDetail({ project, onBack, onSync, error }: Props) {
         </p>
       )}
 
+      <section aria-label="Checkpoint">
+        <h2 class="section-title">Checkpoint</h2>
+        <p class="detail-checkpoint">{project.checkpoint.text}</p>
+      </section>
+
       <section aria-label="Markdown content">
         <h2 class="section-title">Markdown content</h2>
         {project.mdRawContent ? (

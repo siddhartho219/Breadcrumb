@@ -170,6 +170,54 @@ describe("storage", () => {
       expect(project.mdRawContent).toBe("");
     });
 
+    it("computes the checkpoint from provided content at add time", async () => {
+      const project = await addProject({
+        name: "A",
+        category: "personal",
+        mdRawContent: "- [ ] write the tests",
+      });
+      expect(project.checkpoint).toEqual({ text: "write the tests", detectedFrom: "explicit" });
+    });
+
+    it("keeps the default checkpoint when no content is provided", async () => {
+      const project = await addProject({ name: "A", category: "personal" });
+      expect(project.checkpoint).toEqual({
+        text: "No checkpoint detected yet",
+        detectedFrom: "inferred",
+      });
+    });
+
+    it("re-computes the checkpoint when content changes via re-sync", async () => {
+      const project = await addProject({
+        name: "A",
+        category: "personal",
+        mdRawContent: "- [ ] old task",
+      });
+      const result = await syncProjectContent(project.id, "Progress: 50%");
+      expect(result.changed).toBe(true);
+      expect(result.project.checkpoint).toEqual({
+        text: "50%",
+        detectedFrom: "explicit",
+        progressPercent: 50,
+      });
+    });
+
+    it("recomputes the checkpoint when mdRawContent is patched through updateProject", async () => {
+      const project = await addProject({ name: "A", category: "personal" });
+      const updated = await updateProject(project.id, { mdRawContent: "Status: done" });
+      expect(updated.checkpoint).toEqual({ text: "done", detectedFrom: "explicit" });
+    });
+
+    it("leaves the checkpoint alone when patching unrelated fields", async () => {
+      const project = await addProject({
+        name: "A",
+        category: "personal",
+        mdRawContent: "Status: in progress",
+      });
+      const updated = await updateProject(project.id, { lastViewedAt: "2026-02-01T00:00:00.000Z" });
+      expect(updated.checkpoint).toEqual({ text: "in progress", detectedFrom: "explicit" });
+    });
+
     it("is a no-op when re-synced content is identical (timestamp untouched, no write)", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
