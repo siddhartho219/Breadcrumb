@@ -1,0 +1,23 @@
+{
+  "name": "breadcrumb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "See where you left off on every project — community, academic, and personal — in one glance.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "preact": "^10.23.1"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@preact/preset-vite": "^2.9.0",
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}
