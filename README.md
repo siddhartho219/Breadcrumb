@@ -4,8 +4,9 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 0 — Setup & scaffolding.** The extension currently loads and shows an
-empty side panel. No project tracking yet — see `phases.md` for what's next.
+**Phase 1 — Data layer.** Projects can be created, stored, listed, and
+deleted, persisted in `chrome.storage.local`. No markdown input or checkpoint
+parsing yet — see `phases.md` for what's next.
 
 ## Planning docs
 
@@ -42,8 +43,9 @@ from `dist/` the same way.
 npm run test
 ```
 
-Currently no tests exist — the parser heuristics (Phase 3) are the first
-thing that gets real test coverage, per `rules.md`.
+One suite exists: `src/lib/storage.test.ts` (storage CRUD against a mocked
+`chrome.storage.local`). The parser heuristics (Phase 3) get their own
+coverage per `rules.md`.
 
 ## A note on versions
 

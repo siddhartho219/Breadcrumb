@@ -3,7 +3,9 @@
     "target": "ES2020",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // ES2022 lib gives ErrorOptions (cause) + friends; target stays ES2020 for
+    // output. Chrome 114+ (required for sidePanel) supports this fully.
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
