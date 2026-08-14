@@ -1,9 +1,13 @@
-import type { Project } from "../../lib/types";
+import type { Project, Settings } from "../../lib/types";
 import { formatDate, relativeTime } from "../../lib/time";
 import { ProgressBar } from "./ProgressBar";
+import { StalenessDot } from "./StalenessDot";
 
 interface Props {
   project: Project;
+  /** Stored staleness thresholds (Phase 6) — passed down from App's loaded
+      Settings so rows reflect real thresholds, not hardcoded values. */
+  staleness: Settings["staleness"];
   onSelect: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
 }
@@ -11,7 +15,7 @@ interface Props {
 // design.md §4 row: name + checkpoint + progress + "last worked" on one
 // continuous surface, separated by 1px --border-subtle dividers (no card
 // shadow), with a quiet --surface-raised hover (no scale/transform).
-export function ProjectRow({ project, onSelect, onDelete }: Props) {
+export function ProjectRow({ project, staleness, onSelect, onDelete }: Props) {
   const categoryLabel =
     project.category === "custom" && project.customCategoryLabel
       ? project.customCategoryLabel
@@ -38,6 +42,12 @@ export function ProjectRow({ project, onSelect, onDelete }: Props) {
       onClick={() => onSelect(project.id)}
       onKeyDown={handleKeyDown}
     >
+      {/* Leading edge: the staleness dot (design.md §4) — 6px, color-coded
+          via the staleness tokens, with an accessible text alternative. */}
+      <StalenessDot
+        lastContentChangeAt={project.lastContentChangeAt}
+        staleness={staleness}
+      />
       <div class="project-main">
         <span class="project-name">{project.name}</span>
         {project.checkpoint.text && (

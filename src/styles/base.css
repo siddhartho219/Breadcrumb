@@ -259,6 +259,30 @@ textarea {
   color: var(--text-primary);
 }
 
+/* ---- Staleness dot (design.md §4: 6px circle at the row's leading edge,
+   colored by the staleness tokens). This and the toolbar badge are the ONLY
+   places --stale-fresh/--stale-aging/--stale-stale may be used — design.md's
+   explicit constraint: reusing red/amber/green elsewhere dilutes the signal. */
+
+.staleness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.staleness-dot--fresh {
+  background: var(--stale-fresh);
+}
+
+.staleness-dot--aging {
+  background: var(--stale-aging);
+}
+
+.staleness-dot--stale {
+  background: var(--stale-stale);
+}
+
 /* ---- Project list & rows (design.md §4: one continuous surface, 1px
    --border-subtle dividers, quiet --surface-raised hover, no shadows or
    scale/transform animation) ---- */

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
-import type { Project } from "../lib/types";
+import type { Project, Settings } from "../lib/types";
 import {
   addProject,
   connectProjectFileSource,
+  DEFAULT_SETTINGS,
   deleteProject,
   getProjects,
+  getSettings,
   subscribeProjects,
   syncProjectContent,
   updateProject,
@@ -20,6 +22,7 @@ import { ProjectDetail } from "./components/ProjectDetail";
 // per row, and the detail view for raw markdown + re-sync.
 export function App() {
   const [projects, setProjects] = useState<Project[] | null>(null); // null = loading
+  const [settings, setSettings] = useState<Settings | null>(null); // null until loaded
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -29,11 +32,16 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
+    // Load projects AND settings together: rows need the stored staleness
+    // thresholds (Phase 6 — read from Settings, never hardcoded), and if
+    // either read fails the user sees one clear inline error instead of a
+    // half-rendered list (rules.md §3 — no silent failures).
     function refresh() {
-      getProjects()
-        .then((list) => {
+      Promise.all([getProjects(), getSettings()])
+        .then(([list, storedSettings]) => {
           if (cancelled) return;
           setProjects(list);
+          setSettings(storedSettings);
           setLoadError(null);
         })
         .catch((err) => {
@@ -166,7 +174,12 @@ export function App() {
               {loadError}
             </p>
           ) : (
-            <ProjectList projects={projects} onSelect={handleSelect} onDelete={handleDelete} />
+            <ProjectList
+              projects={projects}
+              staleness={(settings ?? DEFAULT_SETTINGS).staleness}
+              onSelect={handleSelect}
+              onDelete={handleDelete}
+            />
           )}
         </section>
       </main>

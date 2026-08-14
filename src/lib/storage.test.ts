@@ -13,9 +13,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addProject,
   connectProjectFileSource,
+  DEFAULT_SETTINGS,
   deleteProject,
   getProjects,
+  getSettings,
   PROJECTS_KEY,
+  SETTINGS_KEY,
   subscribeProjects,
   syncFromFile,
   syncProjectContent,
@@ -394,7 +397,47 @@ describe("storage", () => {
     });
   });
 
-  it("notifies subscribers on project changes from another context", async () => {
+  describe("settings (Phase 6)", () => {
+    it("returns the defaults when nothing has been stored yet", async () => {
+      expect(await getSettings()).toEqual(DEFAULT_SETTINGS);
+    });
+
+    it("reads real stored thresholds instead of hardcoding them", async () => {
+      store.set(SETTINGS_KEY, { staleness: { freshUnderDays: 3, agingUnderDays: 14 } });
+      const settings = await getSettings();
+      expect(settings.staleness).toEqual({ freshUnderDays: 3, agingUnderDays: 14 });
+      expect(settings.defaultCategory).toBe(DEFAULT_SETTINGS.defaultCategory);
+    });
+
+    it("merges partial records over the defaults", async () => {
+      store.set(SETTINGS_KEY, { staleness: { freshUnderDays: 1 } });
+      const settings = await getSettings();
+      expect(settings.staleness.freshUnderDays).toBe(1);
+      expect(settings.staleness.agingUnderDays).toBe(DEFAULT_SETTINGS.staleness.agingUnderDays);
+      expect(settings.defaultCategory).toBe(DEFAULT_SETTINGS.defaultCategory);
+    });
+
+    it("sanitizes garbage threshold fields back to defaults", async () => {
+      store.set(SETTINGS_KEY, { staleness: { freshUnderDays: "soon", agingUnderDays: null } });
+      expect(await getSettings()).toEqual(DEFAULT_SETTINGS);
+    });
+
+    it("throws a user-readable error on a read failure", async () => {
+      const failingChrome = {
+        storage: {
+          local: {
+            async get(): Promise<Record<string, unknown>> {
+              throw new Error("disk on fire");
+            },
+          },
+        },
+      };
+      (globalThis as Record<string, unknown>).chrome = failingChrome;
+      await expect(getSettings()).rejects.toThrow(/Couldn't load settings/);
+    });
+  });
+
+  it("notifies subscribers on project OR settings changes from another context", async () => {
     const listener = vi.fn();
     const unsubscribe = subscribeProjects(listener);
 
@@ -406,12 +449,17 @@ describe("storage", () => {
     handler({ projects: {} }, "local");
     expect(listener).toHaveBeenCalledTimes(1);
 
-    handler({ settings: {} }, "local"); // unrelated key → no notify
+    // Phase 6: settings changes (new staleness thresholds) also refresh the
+    // panel so rows re-render with the new thresholds.
+    handler({ settings: {} }, "local");
+    expect(listener).toHaveBeenCalledTimes(2);
+
     handler({ projects: {} }, "sync"); // other area → no notify
-    expect(listener).toHaveBeenCalledTimes(1);
+    handler({ unrelated: {} }, "local"); // unknown key → no notify
+    expect(listener).toHaveBeenCalledTimes(2);
 
     unsubscribe();
     handler({ projects: {} }, "local");
-    expect(listener).toHaveBeenCalledTimes(1); // unsubscribed → no notify
+    expect(listener).toHaveBeenCalledTimes(2); // unsubscribed → no notify
   });
 });

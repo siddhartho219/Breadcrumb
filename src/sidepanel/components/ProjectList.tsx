@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import type { Category, Project } from "../../lib/types";
+import type { Category, Project, Settings } from "../../lib/types";
 import { ProjectRow } from "./ProjectRow";
 
 type Filter = "all" | Category;
@@ -14,13 +14,15 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 interface Props {
   projects: Project[];
+  /** Stored staleness thresholds — forwarded to each row's StalenessDot. */
+  staleness: Settings["staleness"];
   onSelect: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
 }
 
 // Phase 4: category filter/grouping control per phases.md. Filter state is
 // local to the list; the add button lives in App's section header.
-export function ProjectList({ projects, onSelect, onDelete }: Props) {
+export function ProjectList({ projects, staleness, onSelect, onDelete }: Props) {
   const [filter, setFilter] = useState<Filter>("all");
 
   const visible = filter === "all" ? projects : projects.filter((p) => p.category === filter);
@@ -49,7 +51,13 @@ export function ProjectList({ projects, onSelect, onDelete }: Props) {
       ) : (
         <ul class="project-list">
           {visible.map((project) => (
-            <ProjectRow key={project.id} project={project} onSelect={onSelect} onDelete={onDelete} />
+            <ProjectRow
+              key={project.id}
+              project={project}
+              staleness={staleness}
+              onSelect={onSelect}
+              onDelete={onDelete}
+            />
           ))}
         </ul>
       )}

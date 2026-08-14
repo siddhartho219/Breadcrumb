@@ -4,17 +4,69 @@
 // so the UI can render a real inline error state instead of a silent no-op
 // (rules.md section 3).
 //
-// Schema: { projects: Project[], settings: Settings }. Settings helpers land
-// with Phase 7 (options page); this file only manages projects for now.
+// Schema: { projects: Project[], settings: Settings }. Settings WRITE
+// helpers land with Phase 7 (options page); the read helper (getSettings)
+// landed in Phase 6 so staleness math reads real stored thresholds.
 //
 // Mutations here deliberately do NOT touch the UI directly — callers update
 // their own state from return values, and `subscribeProjects()` lets any
 // context (background worker, options page) notify the panel of changes.
 
-import type { Category, MdSource, Project } from "./types";
+import type { Category, MdSource, Project, Settings } from "./types";
 import { parse } from "./parser";
 
 export const PROJECTS_KEY = "projects";
+export const SETTINGS_KEY = "settings";
+
+/**
+ * Fallback settings (architecture.md §3: freshUnderDays 2, agingUnderDays 7).
+ * `defaultCategory` has no documented default — "personal" is the tool's
+ * reason for existing (design.md §2) and Phase 7 makes it user-controllable.
+ */
+export const DEFAULT_SETTINGS: Settings = {
+  staleness: { freshUnderDays: 2, agingUnderDays: 7 },
+  defaultCategory: "personal",
+};
+
+/**
+ * Read stored settings, merging over DEFAULT_SETTINGS. Phase 6 needs this so
+ * staleness is computed from REAL stored thresholds (Phase 7's UI will write
+ * them) — never hardcoded. A missing record, a partial record, or garbage
+ * fields all resolve to the defaults, so staleness math can never see an
+ * undefined threshold. Throws (like every storage read) on a genuine read
+ * failure, so callers can surface an inline error instead of a silent no-op.
+ */
+export async function getSettings(): Promise<Settings> {
+  try {
+    const data = await chrome.storage.local.get(SETTINGS_KEY);
+    const raw = data[SETTINGS_KEY] as Partial<Settings> | undefined;
+    if (raw === undefined || raw === null || typeof raw !== "object") {
+      return {
+        ...DEFAULT_SETTINGS,
+        staleness: { ...DEFAULT_SETTINGS.staleness },
+      };
+    }
+    const rawStaleness = raw.staleness;
+    return {
+      staleness: {
+        freshUnderDays:
+          typeof rawStaleness?.freshUnderDays === "number"
+            ? rawStaleness.freshUnderDays
+            : DEFAULT_SETTINGS.staleness.freshUnderDays,
+        agingUnderDays:
+          typeof rawStaleness?.agingUnderDays === "number"
+            ? rawStaleness.agingUnderDays
+            : DEFAULT_SETTINGS.staleness.agingUnderDays,
+      },
+      defaultCategory:
+        typeof raw.defaultCategory === "string"
+          ? raw.defaultCategory
+          : DEFAULT_SETTINGS.defaultCategory,
+    };
+  } catch (err) {
+    throw new Error("Couldn't load settings — try again.", { cause: err });
+  }
+}
 
 export interface NewProjectInput {
   name: string;
@@ -314,9 +366,10 @@ function attachStorageListener(): void {
   if (storageListenerAttached) return;
   storageListenerAttached = true;
   // React to writes from any extension context (background worker, options
-  // page, another panel) so this panel never shows a stale list.
+  // page, another panel) so this panel never shows a stale list — or stale
+  // staleness thresholds once Phase 7 edits settings.
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "local" && PROJECTS_KEY in changes) {
+    if (areaName === "local" && (PROJECTS_KEY in changes || SETTINGS_KEY in changes)) {
       for (const listener of listeners) listener();
     }
   });

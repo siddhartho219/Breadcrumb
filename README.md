@@ -4,14 +4,15 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 5 — File System Access integration.** A project can now connect to a
-local `.md` file via the OS picker (side panel only); the handle is persisted
-in IndexedDB and the background service worker polls connected files on a
-`chrome.alarms`-driven 3-minute cadence, re-parsing the checkpoint and
-updating `lastContentChangeAt` only on real content changes. Manual re-sync
-still works as an explicit override, and lapsed file permissions surface a
-"Reconnect file" action in the detail view. Staleness indicators (dot +
-badge) are Phase 6 — see `phases.md`.
+**Phase 6 — Staleness indicators.** Each project row now carries a 6px
+color-coded staleness dot (green/amber/red, always paired with an accessible
+text label) computed from `lastContentChangeAt` against the *stored*
+`Settings.staleness` thresholds — never hardcoded. The toolbar badge reflects
+the most-stale project as a colored dot, recalculated on the same
+`chrome.alarms` cadence as Phase 5's file polling plus immediately on every
+storage write (read-only — the worker never writes back). The staleness
+colors are used only for staleness, per design.md's explicit constraint.
+Threshold-editing UI is Phase 7 — see `phases.md`.
 
 ## Planning docs
 
@@ -48,16 +49,19 @@ from `dist/` the same way.
 npm run test
 ```
 
-Four suites exist:
+Five suites exist:
 - `src/lib/storage.test.ts` — CRUD, markdown add/re-sync semantics, checkpoint
-  wiring, the pub/sub, and Phase 5 file-connection semantics, against a
-  mocked `chrome.storage.local`.
+  wiring, the pub/sub, settings reads, and Phase 5 file-connection semantics,
+  against a mocked `chrome.storage.local`.
 - `src/lib/parser/parser.test.ts` — the checkpoint heuristics, per `rules.md`
   (the one place tests are non-negotiable).
 - `src/lib/time.test.ts` — relative-time/date-format boundary bucketing.
 - `src/lib/file-poll.test.ts` — the background worker's connected-file poll
   loop (changed/identical/lapsed-permission/missing-handle/throwing project),
   with a mocked chrome.storage and a mocked file-read layer.
+- `src/lib/staleness.test.ts` — fresh/aging/stale boundary semantics, malformed
+  timestamps, threshold collisions, and the most-stale badge state (incl. the
+  rules.md §3 guarantee that one bad record can't blank the badge).
 
 ## A note on versions
 
