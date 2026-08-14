@@ -5,8 +5,10 @@ import {
   connectProjectFileSource,
   DEFAULT_SETTINGS,
   deleteProject,
+  getOnboardingSeen,
   getProjects,
   getSettings,
+  setOnboardingSeen,
   subscribeProjects,
   syncProjectContent,
   updateProject,
@@ -16,32 +18,40 @@ import type { FileConnection } from "../lib/fsa";
 import { AddProjectForm } from "./components/AddProjectForm";
 import { ProjectList } from "./components/ProjectList";
 import { ProjectDetail } from "./components/ProjectDetail";
+import { Onboarding } from "./components/Onboarding";
+import { EmptyState } from "./components/EmptyState";
 
-// Phase 4: dashboard layout per design.md — brand header, collapsible add
-// form, category-filtered project list with checkpoint/progress/last-worked
-// per row, and the detail view for raw markdown + re-sync.
+// Phase 4 dashboard per design.md, extended in Phase 7 with:
+//  - a shown-once first-run onboarding screen (separate storage key — no
+//    Settings interface change, no migration),
+//  - a proper no-projects empty state with a single --accent CTA,
+//  - routing so the add form, empty state, and list never fight each other.
 export function App() {
   const [projects, setProjects] = useState<Project[] | null>(null); // null = loading
   const [settings, setSettings] = useState<Settings | null>(null); // null until loaded
+  const [onboardingSeen, setOnboardingSeenState] = useState<boolean | null>(null); // null = loading
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    // Load projects AND settings together: rows need the stored staleness
-    // thresholds (Phase 6 — read from Settings, never hardcoded), and if
-    // either read fails the user sees one clear inline error instead of a
-    // half-rendered list (rules.md §3 — no silent failures).
+    // Load projects, settings, AND the onboarding flag together: rows need the
+    // stored staleness thresholds, and if any read fails the user sees one
+    // clear inline error instead of a half-rendered list (rules.md §3 — no
+    // silent failures).
     function refresh() {
-      Promise.all([getProjects(), getSettings()])
-        .then(([list, storedSettings]) => {
+      Promise.all([getProjects(), getSettings(), getOnboardingSeen()])
+        .then(([list, storedSettings, seen]) => {
           if (cancelled) return;
           setProjects(list);
           setSettings(storedSettings);
+          setOnboardingSeenState(seen);
           setLoadError(null);
         })
         .catch((err) => {
@@ -52,7 +62,7 @@ export function App() {
 
     refresh();
     // Keep the list in sync when another context (background worker, options
-    // page) writes project data.
+    // page — e.g. settings edits, import/reset) writes data.
     const unsubscribe = subscribeProjects(refresh);
     return () => {
       cancelled = true;
@@ -122,6 +132,24 @@ export function App() {
     setProjects((prev) => (prev ?? []).map((p) => (p.id === id ? updated : p)));
   }
 
+  async function handleOnboardingDone() {
+    setOnboardingBusy(true);
+    setOnboardingError(null);
+    try {
+      // Persist the shown-once flag BEFORE dismissing: if the write fails the
+      // user sees an inline error and can retry, instead of silently seeing
+      // the screen every open (rules.md §3 — no silent failures).
+      await setOnboardingSeen(true);
+      setOnboardingSeenState(true);
+    } catch (err) {
+      setOnboardingError(
+        err instanceof Error ? err.message : "Couldn't save your preferences — try again.",
+      );
+    } finally {
+      setOnboardingBusy(false);
+    }
+  }
+
   function handleBack() {
     setSelectedId(null);
     setDetailError(null);
@@ -146,6 +174,31 @@ export function App() {
     );
   }
 
+  // First-run onboarding: only when the flag is unset AND there's nothing to
+  // show yet — someone with imported data is clearly not new.
+  const loaded = projects !== null && !loadError;
+  const showOnboarding =
+    loaded && onboardingSeen === false && projects.length === 0;
+
+  if (showOnboarding) {
+    return (
+      <div class="panel">
+        <header class="panel-header">
+          <span class="brand">Breadcrumb</span>
+        </header>
+        <main class="panel-body">
+          <Onboarding
+            onDone={handleOnboardingDone}
+            busy={onboardingBusy}
+            error={onboardingError}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  const empty = loaded && projects.length === 0;
+
   return (
     <div class="panel">
       <header class="panel-header">
@@ -161,7 +214,9 @@ export function App() {
         <section aria-label="Projects">
           <div class="section-head">
             <h2 class="section-title">Projects</h2>
-            {!showForm && (
+            {/* One CTA at a time: the empty state carries its own button, and
+                the open form is itself the add action. */}
+            {!showForm && !empty && (
               <button type="button" class="btn-primary btn-small" onClick={() => setShowForm(true)}>
                 + Add project
               </button>
@@ -173,6 +228,8 @@ export function App() {
             <p class="form-error" role="alert">
               {loadError}
             </p>
+          ) : empty ? (
+            showForm ? null : <EmptyState onAdd={() => setShowForm(true)} />
           ) : (
             <ProjectList
               projects={projects}

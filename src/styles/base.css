@@ -32,7 +32,11 @@ body {
 .panel {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Phase 7: pin the header and let the body scroll — the "many projects"
+     edge case (phases.md) is a scrolling list under a stable header, not a
+     page that grows past the panel. */
+  height: 100vh;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -51,10 +55,22 @@ body {
 
 .panel-body {
   flex: 1;
+  min-height: 0;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+}
+
+/* Side panel only (the options page stacks sections naturally): let the
+   projects section fill the remaining height so the empty state can center
+   itself vertically (design.md §4 — centered empty states). */
+.panel-body:not(.settings) > section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* ---- Buttons (design.md §4: flat accent fill for primary, ghost/outline
@@ -111,6 +127,14 @@ body {
 .btn-ghost:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* A label styled as a button (options page import). Buttons get pointer
+   cursor natively; labels don't. */
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
 }
 
 /* ---- Forms ---- */
@@ -224,6 +248,29 @@ textarea {
   padding: 32px 16px;
   text-align: center;
   color: var(--text-secondary);
+}
+
+/* Empty-state / onboarding titles (design.md §4: text-forward, no mascots). */
+.empty-state-title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: var(--text-title-weight);
+  color: var(--text-primary);
+  line-height: var(--line-height-tight);
+}
+
+.onboarding {
+  max-width: 300px;
+}
+
+.onboarding-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
 }
 
 /* ---- Category filter ---- */
@@ -494,6 +541,10 @@ textarea {
   margin: 0;
   color: var(--text-primary);
   line-height: var(--line-height-body);
+  /* Phase 7 edge case: checkpoint text can be a long unbroken string — wrap
+     it instead of overflowing the panel (the parser's 280-char cap is the
+     first line of defense; the UI must not rely on it alone). */
+  overflow-wrap: anywhere;
 }
 
 .detail-progress {

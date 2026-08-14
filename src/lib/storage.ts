@@ -4,9 +4,11 @@
 // so the UI can render a real inline error state instead of a silent no-op
 // (rules.md section 3).
 //
-// Schema: { projects: Project[], settings: Settings }. Settings WRITE
-// helpers land with Phase 7 (options page); the read helper (getSettings)
-// landed in Phase 6 so staleness math reads real stored thresholds.
+// Schema: { projects: Project[], settings: Settings, onboardingSeen: boolean }.
+// Phase 7 adds the settings WRITE path (saveSettings), the data escape hatch
+// (exportAllData / importAllData / resetAllData — rules.md §3), and the
+// first-run flag (get/setOnboardingSeen). The settings READ helper landed in
+// Phase 6 so staleness math reads real stored thresholds.
 //
 // Mutations here deliberately do NOT touch the UI directly — callers update
 // their own state from return values, and `subscribeProjects()` lets any
@@ -17,6 +19,46 @@ import { parse } from "./parser";
 
 export const PROJECTS_KEY = "projects";
 export const SETTINGS_KEY = "settings";
+/** First-run onboarding flag (Phase 7). Separate key on purpose: adding a
+    field to the Settings interface would need a migration per rules.md §4;
+    a dedicated key is additive and needs none. Missing → "not seen yet". */
+export const ONBOARDING_KEY = "onboardingSeen";
+
+export const CATEGORIES: readonly Category[] = [
+  "community",
+  "academic",
+  "personal",
+  "custom",
+];
+
+/**
+ * Pure settings normalizer: merge an arbitrary stored/imported record over
+ * DEFAULT_SETTINGS, sanitizing garbage/partial fields so staleness math can
+ * never see an undefined threshold. Used by getSettings (storage reads) and
+ * importAllData (file reads).
+ */
+function normalizeSettings(raw: Partial<Settings> | undefined | null): Settings {
+  if (raw === undefined || raw === null || typeof raw !== "object") {
+    return { ...DEFAULT_SETTINGS, staleness: { ...DEFAULT_SETTINGS.staleness } };
+  }
+  const rawStaleness = raw.staleness;
+  return {
+    staleness: {
+      freshUnderDays:
+        typeof rawStaleness?.freshUnderDays === "number"
+          ? rawStaleness.freshUnderDays
+          : DEFAULT_SETTINGS.staleness.freshUnderDays,
+      agingUnderDays:
+        typeof rawStaleness?.agingUnderDays === "number"
+          ? rawStaleness.agingUnderDays
+          : DEFAULT_SETTINGS.staleness.agingUnderDays,
+    },
+    defaultCategory:
+      typeof raw.defaultCategory === "string" && CATEGORIES.includes(raw.defaultCategory as Category)
+        ? (raw.defaultCategory as Category)
+        : DEFAULT_SETTINGS.defaultCategory,
+  };
+}
 
 /**
  * Fallback settings (architecture.md §3: freshUnderDays 2, agingUnderDays 7).
@@ -39,32 +81,57 @@ export const DEFAULT_SETTINGS: Settings = {
 export async function getSettings(): Promise<Settings> {
   try {
     const data = await chrome.storage.local.get(SETTINGS_KEY);
-    const raw = data[SETTINGS_KEY] as Partial<Settings> | undefined;
-    if (raw === undefined || raw === null || typeof raw !== "object") {
-      return {
-        ...DEFAULT_SETTINGS,
-        staleness: { ...DEFAULT_SETTINGS.staleness },
-      };
-    }
-    const rawStaleness = raw.staleness;
-    return {
-      staleness: {
-        freshUnderDays:
-          typeof rawStaleness?.freshUnderDays === "number"
-            ? rawStaleness.freshUnderDays
-            : DEFAULT_SETTINGS.staleness.freshUnderDays,
-        agingUnderDays:
-          typeof rawStaleness?.agingUnderDays === "number"
-            ? rawStaleness.agingUnderDays
-            : DEFAULT_SETTINGS.staleness.agingUnderDays,
-      },
-      defaultCategory:
-        typeof raw.defaultCategory === "string"
-          ? raw.defaultCategory
-          : DEFAULT_SETTINGS.defaultCategory,
-    };
+    return normalizeSettings(data[SETTINGS_KEY] as Partial<Settings> | undefined);
   } catch (err) {
     throw new Error("Couldn't load settings — try again.", { cause: err });
+  }
+}
+
+/**
+ * Phase 7: the settings WRITE path. Validates the shape before persisting —
+ * thresholds must be whole days with "stale after" strictly later than
+ * "fresh under" (the staleness boundary semantics in lib/staleness.ts), and
+ * the default category must be a real Category. Throws a user-readable
+ * message on invalid input so the options page can show an inline error.
+ */
+export async function saveSettings(settings: Settings): Promise<Settings> {
+  const { freshUnderDays, agingUnderDays } = settings.staleness;
+  if (!Number.isInteger(freshUnderDays) || freshUnderDays < 0) {
+    throw new Error('"Fresh under" must be a whole number of days.');
+  }
+  if (!Number.isInteger(agingUnderDays) || agingUnderDays < 0) {
+    throw new Error('"Stale after" must be a whole number of days.');
+  }
+  if (agingUnderDays <= freshUnderDays) {
+    throw new Error('"Stale after" must be greater than "fresh under".');
+  }
+  if (!CATEGORIES.includes(settings.defaultCategory)) {
+    throw new Error("Unknown default category.");
+  }
+  try {
+    await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+    return settings;
+  } catch (err) {
+    throw new Error("Couldn't save settings — try again.", { cause: err });
+  }
+}
+
+/** Whether the first-run explanation has been dismissed. Missing key → false
+    (a fresh install should see it once). */
+export async function getOnboardingSeen(): Promise<boolean> {
+  try {
+    const data = await chrome.storage.local.get(ONBOARDING_KEY);
+    return data[ONBOARDING_KEY] === true;
+  } catch (err) {
+    throw new Error("Couldn't load your data — try again.", { cause: err });
+  }
+}
+
+export async function setOnboardingSeen(seen: boolean): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [ONBOARDING_KEY]: seen });
+  } catch (err) {
+    throw new Error("Couldn't save your preferences — try again.", { cause: err });
   }
 }
 
@@ -335,6 +402,146 @@ export async function connectProjectFileSource(
     throw new Error("Couldn't save the file connection — try again.", { cause: err });
   }
   return updated;
+}
+
+/**
+ * Phase 7: export everything as a JSON string (options page downloads it).
+ * Versioned envelope so a future migration can recognize old exports. FSA
+ * handles live in IndexedDB and are NOT serializable — the exported projects
+ * keep their handleId strings, and reconnecting after import is expected.
+ */
+export interface ExportPayload {
+  version: 1;
+  exportedAt: string;
+  projects: Project[];
+  settings: Settings;
+}
+
+const EXPORT_VERSION = 1;
+
+export async function exportAllData(): Promise<string> {
+  try {
+    const [projects, settings] = await Promise.all([getProjects(), getSettings()]);
+    const payload: ExportPayload = {
+      version: EXPORT_VERSION,
+      exportedAt: nowIso(),
+      projects,
+      settings,
+    };
+    return JSON.stringify(payload, null, 2);
+  } catch (err) {
+    throw new Error("Couldn't export your data — try again.", { cause: err });
+  }
+}
+
+/** Strict shape check for one imported project record. The id, not the name,
+    is the real identity (duplicate names are fine; duplicate ids are not). */
+function isValidProjectRecord(value: unknown): value is Project {
+  if (typeof value !== "object" || value === null) return false;
+  const p = value as Record<string, unknown>;
+  if (typeof p.id !== "string" || p.id.length === 0) return false;
+  if (typeof p.name !== "string") return false;
+  if (typeof p.category !== "string" || !CATEGORIES.includes(p.category as Category)) return false;
+  if (p.customCategoryLabel !== undefined && typeof p.customCategoryLabel !== "string") return false;
+  if (typeof p.mdRawContent !== "string") return false;
+  const src = p.mdSource as { type?: unknown; lastPastedAt?: unknown; handleId?: unknown } | undefined;
+  if (typeof src !== "object" || src === null) return false;
+  if (src.type === "manual") {
+    if (typeof src.lastPastedAt !== "string") return false;
+  } else if (src.type === "fsa") {
+    if (typeof src.handleId !== "string" || src.handleId.length === 0) return false;
+  } else {
+    return false;
+  }
+  const cp = p.checkpoint as { text?: unknown; detectedFrom?: unknown; progressPercent?: unknown } | undefined;
+  if (typeof cp !== "object" || cp === null) return false;
+  if (typeof cp.text !== "string") return false;
+  if (cp.detectedFrom !== "explicit" && cp.detectedFrom !== "inferred") return false;
+  if (cp.progressPercent !== undefined && typeof cp.progressPercent !== "number") return false;
+  for (const key of ["createdAt", "lastContentChangeAt", "lastViewedAt"] as const) {
+    if (typeof p[key] !== "string") return false;
+  }
+  if (typeof p.order !== "number") return false;
+  return true;
+}
+
+export interface ImportResult {
+  /** Number of projects written (0 when the file carried none). */
+  projects: number;
+}
+
+/**
+ * Phase 7: import a JSON export. Validation is ALL-or-nothing — the entire
+ * shape is checked before a single write, so malformed data can never corrupt
+ * storage (rules.md §3). Present keys replace what's stored; absent keys leave
+ * the corresponding data untouched. Projects are validated strictly (our
+ * exact export shape, unique ids); settings are normalized leniently the same
+ * way getSettings handles a partial record.
+ */
+export async function importAllData(json: string): Promise<ImportResult> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("That file doesn't look like a Breadcrumb export (not valid JSON).");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("That file doesn't look like a Breadcrumb export.");
+  }
+  const payload = parsed as Record<string, unknown>;
+
+  if (payload.version !== undefined && payload.version !== EXPORT_VERSION) {
+    throw new Error("That file was made by a different version of Breadcrumb.");
+  }
+
+  let projects: Project[] | undefined;
+  if (payload.projects !== undefined) {
+    if (!Array.isArray(payload.projects)) {
+      throw new Error("That file's projects aren't a list — nothing was imported.");
+    }
+    const ids = new Set<string>();
+    projects = payload.projects.map((record, i) => {
+      if (!isValidProjectRecord(record)) {
+        throw new Error(
+          `Project #${i + 1} in that file isn't valid Breadcrumb data — nothing was imported.`,
+        );
+      }
+      if (ids.has(record.id)) {
+        throw new Error("Two projects in that file share the same id — nothing was imported.");
+      }
+      ids.add(record.id);
+      return record;
+    });
+  }
+
+  let settings: Settings | undefined;
+  if (payload.settings !== undefined) {
+    settings = normalizeSettings(payload.settings as Partial<Settings>);
+  }
+
+  try {
+    const toWrite: Record<string, unknown> = {};
+    if (projects !== undefined) toWrite[PROJECTS_KEY] = projects;
+    if (settings !== undefined) toWrite[SETTINGS_KEY] = settings;
+    await chrome.storage.local.set(toWrite);
+    return { projects: projects?.length ?? 0 };
+  } catch (err) {
+    throw new Error("Couldn't import — try again.", { cause: err });
+  }
+}
+
+/**
+ * Phase 7: the rules.md §3 escape hatch. Clears every key this extension
+ * owns, regardless of what state storage is in — chrome.storage remove() of
+ * absent keys is a no-op success, so the only failure mode is a genuine
+ * storage error, which is surfaced rather than swallowed.
+ */
+export async function resetAllData(): Promise<void> {
+  try {
+    await chrome.storage.local.remove([PROJECTS_KEY, SETTINGS_KEY, ONBOARDING_KEY]);
+  } catch (err) {
+    throw new Error("Couldn't reset your data — try again.", { cause: err });
+  }
 }
 
 export async function deleteProject(id: string): Promise<void> {

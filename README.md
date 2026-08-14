@@ -4,15 +4,18 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 6 — Staleness indicators.** Each project row now carries a 6px
-color-coded staleness dot (green/amber/red, always paired with an accessible
-text label) computed from `lastContentChangeAt` against the *stored*
-`Settings.staleness` thresholds — never hardcoded. The toolbar badge reflects
-the most-stale project as a colored dot, recalculated on the same
-`chrome.alarms` cadence as Phase 5's file polling plus immediately on every
-storage write (read-only — the worker never writes back). The staleness
-colors are used only for staleness, per design.md's explicit constraint.
-Threshold-editing UI is Phase 7 — see `phases.md`.
+**v1 (Phases 0–7) is complete.** Breadcrumb covers PRD.md's full MVP list:
+projects with category tags (community / academic / personal / custom),
+markdown via paste/upload/connected local file, automatic checkpoint
+heuristics (hand-rolled, per rules.md), explicit-or-inferred progress bars,
+first-added / last-worked timestamps, category filtering, staleness dots +
+most-stale toolbar badge (fresh/aging/stale, driven by real stored
+thresholds), and the full options page — threshold editing, default category,
+export/import (validated JSON), and the reset escape hatch. First-run
+onboarding and proper empty states are in, and the rules.md §3 error-handling
+standard holds across every storage and FSA path. Stretch items (GitHub
+sync, AI summarization, cross-device sync, light theme, notifications) are
+Phase 8 / explicitly deferred — see `phases.md`.
 
 ## Planning docs
 
@@ -49,7 +52,7 @@ from `dist/` the same way.
 npm run test
 ```
 
-Five suites exist:
+Five suites exist (107 tests total):
 - `src/lib/storage.test.ts` — CRUD, markdown add/re-sync semantics, checkpoint
   wiring, the pub/sub, settings reads, and Phase 5 file-connection semantics,
   against a mocked `chrome.storage.local`.
@@ -62,6 +65,9 @@ Five suites exist:
 - `src/lib/staleness.test.ts` — fresh/aging/stale boundary semantics, malformed
   timestamps, threshold collisions, and the most-stale badge state (incl. the
   rules.md §3 guarantee that one bad record can't blank the badge).
+- `src/lib/storage.test.ts` also covers Phase 7: settings save validation,
+  onboarding flag, export/import (round-trip + every rejection path),
+  reset, and duplicate project names.
 
 ## A note on versions
 

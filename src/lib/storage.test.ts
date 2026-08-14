@@ -15,15 +15,23 @@ import {
   connectProjectFileSource,
   DEFAULT_SETTINGS,
   deleteProject,
+  exportAllData,
+  getOnboardingSeen,
   getProjects,
   getSettings,
+  importAllData,
+  ONBOARDING_KEY,
   PROJECTS_KEY,
+  resetAllData,
+  saveSettings,
+  setOnboardingSeen,
   SETTINGS_KEY,
   subscribeProjects,
   syncFromFile,
   syncProjectContent,
   updateProject,
 } from "./storage";
+import type { Project } from "./types";
 
 const store = new Map<string, unknown>();
 const onChanged = vi.fn();
@@ -394,6 +402,140 @@ describe("storage", () => {
 
       expect(result.changed).toBe(true);
       expect(result.project.mdSource.type).toBe("manual");
+    });
+  });
+
+  describe("settings write / export / import / reset (Phase 7)", () => {
+    it("allows duplicate project names — ids are the real identity", async () => {
+      const a = await addProject({ name: "Same name", category: "personal" });
+      const b = await addProject({ name: "Same name", category: "personal" });
+      expect(a.id).not.toBe(b.id);
+      expect((await getProjects()).map((p) => p.name)).toEqual(["Same name", "Same name"]);
+    });
+
+    it("saveSettings persists valid settings", async () => {
+      const saved = await saveSettings({
+        staleness: { freshUnderDays: 3, agingUnderDays: 10 },
+        defaultCategory: "academic",
+      });
+      expect(saved.staleness).toEqual({ freshUnderDays: 3, agingUnderDays: 10 });
+      expect((await getSettings()).defaultCategory).toBe("academic");
+      expect(store.get(SETTINGS_KEY)).toEqual(saved);
+    });
+
+    it("saveSettings rejects invalid thresholds without writing", async () => {
+      await expect(
+        saveSettings({ staleness: { freshUnderDays: -1, agingUnderDays: 7 }, defaultCategory: "personal" }),
+      ).rejects.toThrow(/whole number/);
+      await expect(
+        saveSettings({ staleness: { freshUnderDays: 5, agingUnderDays: 5 }, defaultCategory: "personal" }),
+      ).rejects.toThrow(/greater than/);
+      await expect(
+        saveSettings({ staleness: { freshUnderDays: 1.5, agingUnderDays: 7 }, defaultCategory: "personal" }),
+      ).rejects.toThrow(/whole number/);
+      expect(store.has(SETTINGS_KEY)).toBe(false);
+    });
+
+    it("saveSettings rejects an unknown default category", async () => {
+      await expect(
+        saveSettings({
+          staleness: { freshUnderDays: 2, agingUnderDays: 7 },
+          defaultCategory: "work" as never,
+        }),
+      ).rejects.toThrow(/category/i);
+    });
+
+    it("onboarding flag defaults to not-seen and round-trips", async () => {
+      expect(await getOnboardingSeen()).toBe(false);
+      await setOnboardingSeen(true);
+      expect(await getOnboardingSeen()).toBe(true);
+      expect(store.get(ONBOARDING_KEY)).toBe(true);
+    });
+
+    it("exportAllData returns a parseable versioned envelope of everything", async () => {
+      const project = await addProject({ name: "A", category: "personal", mdRawContent: "Progress: 10%" });
+      await saveSettings({ staleness: { freshUnderDays: 4, agingUnderDays: 9 }, defaultCategory: "community" });
+
+      const json = await exportAllData();
+      const parsed = JSON.parse(json) as {
+        version: number;
+        projects: Project[];
+        settings: { staleness: { freshUnderDays: number; agingUnderDays: number } };
+      };
+      expect(parsed.version).toBe(1);
+      expect(parsed.projects).toEqual([project]);
+      expect(parsed.settings.staleness).toEqual({ freshUnderDays: 4, agingUnderDays: 9 });
+    });
+
+    it("importAllData round-trips an export", async () => {
+      const a = await addProject({ name: "A", category: "personal", mdRawContent: "Status: done" });
+      const b = await addProject({ name: "B", category: "custom", customCategoryLabel: "Hobby" });
+      await saveSettings({ staleness: { freshUnderDays: 1, agingUnderDays: 4 }, defaultCategory: "academic" });
+      const exported = await exportAllData();
+
+      // Scramble current state to prove import actually replaces it.
+      await resetAllData();
+      const result = await importAllData(exported);
+
+      expect(result.projects).toBe(2);
+      const projects = await getProjects();
+      expect(projects.map((p) => p.name)).toEqual(["A", "B"]);
+      expect(projects[0].checkpoint.text).toBe("done");
+      expect((await getSettings()).staleness).toEqual({ freshUnderDays: 1, agingUnderDays: 4 });
+    });
+
+    it("importAllData rejects malformed JSON without writing", async () => {
+      await addProject({ name: "Keep me", category: "personal" });
+      const before = store.get(PROJECTS_KEY);
+      await expect(importAllData("{ not json")).rejects.toThrow(/JSON/);
+      expect(store.get(PROJECTS_KEY)).toBe(before);
+    });
+
+    it("importAllData rejects a wrong version and invalid records without writing", async () => {
+      await addProject({ name: "First", category: "personal" });
+      const valid = JSON.parse(await exportAllData());
+      const before = store.get(PROJECTS_KEY);
+
+      await expect(importAllData(JSON.stringify({ ...valid, version: 99 }))).rejects.toThrow(
+        /different version/,
+      );
+
+      const withBadRecord = { ...valid, projects: [valid.projects[0], { ...valid.projects[0], name: 42 }] };
+      await expect(importAllData(JSON.stringify(withBadRecord))).rejects.toThrow(/Project #2/);
+
+      const withDuplicateIds = {
+        ...valid,
+        projects: [valid.projects[0], { ...valid.projects[0], id: valid.projects[0].id }],
+      };
+      await expect(importAllData(JSON.stringify(withDuplicateIds))).rejects.toThrow(/same id/);
+
+      // None of the failed imports touched storage.
+      expect(store.get(PROJECTS_KEY)).toBe(before);
+    });
+
+    it("importAllData with no projects key leaves projects untouched", async () => {
+      const project = await addProject({ name: "A", category: "personal" });
+      const result = await importAllData(JSON.stringify({ version: 1, settings: DEFAULT_SETTINGS }));
+      expect(result.projects).toBe(0);
+      expect((await getProjects())[0].id).toBe(project.id);
+    });
+
+    it("resetAllData clears projects, settings, and the onboarding flag", async () => {
+      await addProject({ name: "A", category: "personal" });
+      await saveSettings({ staleness: { freshUnderDays: 2, agingUnderDays: 7 }, defaultCategory: "personal" });
+      await setOnboardingSeen(true);
+
+      await resetAllData();
+
+      expect(await getProjects()).toEqual([]);
+      expect(await getSettings()).toEqual(DEFAULT_SETTINGS);
+      expect(await getOnboardingSeen()).toBe(false);
+      expect(store.size).toBe(0);
+    });
+
+    it("resetAllData works even when storage is empty", async () => {
+      await expect(resetAllData()).resolves.toBeUndefined();
+      expect(store.size).toBe(0);
     });
   });
 
