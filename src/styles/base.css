@@ -1,3 +1,8 @@
+/* base.css — applied after tokens.css (design.md). Every color, size, weight,
+   and tracking value below comes from a token; nothing is invented here.
+   design.md constraint: the staleness colors (green/amber/red) appear nowhere
+   in this file — they're reserved for Phase 6's staleness UI. */
+
 * {
   box-sizing: border-box;
 }
@@ -10,11 +15,19 @@ body {
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-body);
+  line-height: var(--line-height-body);
 }
 
 #app {
   min-height: 100vh;
 }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Shell ---- */
 
 .panel {
   display: flex;
@@ -31,53 +44,9 @@ body {
 
 .brand {
   font-size: var(--text-title);
-  font-weight: 600;
+  font-weight: var(--text-title-weight);
   letter-spacing: -0.01em;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 16px;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: var(--bg);
-  border: none;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: var(--text-body);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.btn-ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: var(--text-body);
-  cursor: pointer;
-}
-
-/* ---- Phase 1 functional UI (plain; the real design pass is Phase 4) ---- */
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  line-height: var(--line-height-tight);
 }
 
 .panel-body {
@@ -88,11 +57,70 @@ body {
   gap: 20px;
 }
 
+/* ---- Buttons (design.md §4: flat accent fill for primary, ghost/outline
+   for secondary. No gradients, no invented hover colors.) ---- */
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- Forms ---- */
+
 .project-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  padding: 14px;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -105,10 +133,11 @@ body {
 
 .form-row label {
   font-size: var(--text-label);
-  font-weight: 500;
+  font-weight: var(--text-label-weight);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--text-label-tracking);
   color: var(--text-secondary);
+  line-height: var(--line-height-tight);
 }
 
 input:not([type="file"]),
@@ -123,30 +152,116 @@ textarea {
   font-family: var(--font-ui);
 }
 
+input:not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
 textarea {
   resize: vertical;
   min-height: 96px;
 }
 
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* Inline errors: a calm accent-tinted callout, NOT red — design.md reserves
+   red/amber/green exclusively for the staleness signal. */
+
 .form-error {
   margin: 0;
-  color: var(--stale-stale);
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text-primary);
   font-size: var(--text-body);
+  line-height: var(--line-height-body);
+}
+
+/* ---- Sections & labels ---- */
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .section-title {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: var(--text-label);
-  font-weight: 500;
+  font-weight: var(--text-label-weight);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--text-label-tracking);
   color: var(--text-secondary);
+  line-height: var(--line-height-tight);
 }
 
 .empty-hint {
   margin: 8px 0;
   color: var(--text-secondary);
 }
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* ---- Category filter ---- */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.filter-chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: var(--text-label);
+  font-weight: var(--text-label-weight);
+  text-transform: uppercase;
+  letter-spacing: var(--text-label-tracking);
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  background: var(--surface-raised);
+}
+
+.filter-chip--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+/* ---- Project list & rows (design.md §4: one continuous surface, 1px
+   --border-subtle dividers, quiet --surface-raised hover, no shadows or
+   scale/transform animation) ---- */
 
 .project-list {
   list-style: none;
@@ -159,9 +274,19 @@ textarea {
 .project-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 4px;
+  gap: 12px;
+  padding: 12px 8px;
   border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.project-row:hover {
+  background: var(--surface-raised);
+}
+
+/* Outline inside the row so it isn't clipped at the panel edge. */
+.project-row:focus-visible {
+  outline-offset: -2px;
 }
 
 .project-main {
@@ -169,12 +294,13 @@ textarea {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .project-name {
   font-size: var(--text-title);
-  font-weight: 600;
+  font-weight: var(--text-title-weight);
+  line-height: var(--line-height-tight);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,23 +308,76 @@ textarea {
 }
 
 .project-checkpoint {
-  font-size: var(--text-meta);
+  font-size: var(--text-body);
+  font-weight: var(--text-body-weight);
   color: var(--text-secondary);
+  line-height: var(--line-height-body);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.project-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.project-last-worked {
+  font-size: var(--text-meta);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.project-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Category tags — low-saturation tint per the category color table
+   (design.md §2). Tints are derived from the tokens via color-mix, so no
+   new color values are invented. */
+
 .category-tag {
   font-size: var(--text-label);
+  font-weight: var(--text-label-weight);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  letter-spacing: var(--text-label-tracking);
+  line-height: var(--line-height-tight);
   border-radius: 999px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.category-tag--community {
+  color: var(--category-community);
+  border-color: color-mix(in srgb, var(--category-community) 35%, transparent);
+  background: color-mix(in srgb, var(--category-community) 10%, transparent);
+}
+
+.category-tag--academic {
+  color: var(--category-academic);
+  border-color: color-mix(in srgb, var(--category-academic) 35%, transparent);
+  background: color-mix(in srgb, var(--category-academic) 10%, transparent);
+}
+
+.category-tag--personal {
+  color: var(--category-personal);
+  border-color: color-mix(in srgb, var(--category-personal) 35%, transparent);
+  background: color-mix(in srgb, var(--category-personal) 10%, transparent);
+}
+
+.category-tag--custom {
+  color: var(--category-custom);
+  border-color: color-mix(in srgb, var(--category-custom) 35%, transparent);
+  background: color-mix(in srgb, var(--category-custom) 10%, transparent);
 }
 
 .btn-delete {
@@ -208,15 +387,47 @@ textarea {
   border-radius: 6px;
   padding: 4px 10px;
   font-size: var(--text-label);
+  font-weight: var(--text-label-weight);
+  line-height: var(--line-height-tight);
   cursor: pointer;
 }
 
 .btn-delete:hover {
   color: var(--text-secondary);
   border-color: var(--text-secondary);
+  background: var(--surface);
 }
 
-/* ---- Phase 2: project detail view ---- */
+/* ---- Progress bar (design.md §4: 4px, rounded, --surface-raised track,
+   --accent fill; inferred fills get a subtle diagonal stripe) ---- */
+
+.progress {
+  flex: 1;
+  min-width: 48px;
+  max-width: 140px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.progress-fill--inferred {
+  /* Qualitative "in progress" marker — the stripe says "we're guessing",
+     not "the file reported this number". Stripe is --bg at partial opacity. */
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--bg) 35%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+/* ---- Project detail ---- */
 
 .detail {
   display: flex;
@@ -226,30 +437,64 @@ textarea {
 
 .detail-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+}
+
+.detail-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .detail-title {
   margin: 0;
   font-size: var(--text-title);
-  font-weight: 600;
+  font-weight: var(--text-title-weight);
+  line-height: var(--line-height-tight);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.detail-meta {
+  margin: 0;
+  font-size: var(--text-meta);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-tertiary);
+}
+
 .detail-checkpoint {
   margin: 0;
   color: var(--text-primary);
-  line-height: 1.4;
+  line-height: var(--line-height-body);
 }
 
+.detail-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.detail-progress .progress {
+  flex: none;
+  width: 140px;
+  max-width: none;
+}
+
+.detail-progress-hint {
+  font-size: var(--text-meta);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-tertiary);
+}
+
+/* Raw markdown preview — mono type tokens (design.md §3: anything
+   representing raw file content renders mono). */
+
 .markdown-raw {
-  /* Phase 2 exception: raw markdown renders in the mono type tokens
-     (design.md §3) — the one place Phase 4 type tokens are pulled early.
-     Everything else in this phase stays functionally plain. */
   margin: 0;
   padding: 12px;
   background: var(--surface-raised);
@@ -257,6 +502,7 @@ textarea {
   border-radius: 8px;
   font-family: var(--font-mono);
   font-size: var(--text-mono);
+  font-weight: var(--text-mono-weight);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;

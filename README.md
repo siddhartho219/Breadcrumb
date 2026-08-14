@@ -4,10 +4,14 @@ See where you left off on every project — community, academic, and personal �
 
 ## Status
 
-**Phase 3 — Checkpoint engine.** Markdown content is turned into a checkpoint
-automatically (Progress/Status line → checkbox → heading → paragraph
-fallback) and shown in the list and detail view. No dashboard styling,
-progress bar, or staleness indicators yet — see `phases.md` for what's next.
+**Phase 5 — File System Access integration.** A project can now connect to a
+local `.md` file via the OS picker (side panel only); the handle is persisted
+in IndexedDB and the background service worker polls connected files on a
+`chrome.alarms`-driven 3-minute cadence, re-parsing the checkpoint and
+updating `lastContentChangeAt` only on real content changes. Manual re-sync
+still works as an explicit override, and lapsed file permissions surface a
+"Reconnect file" action in the detail view. Staleness indicators (dot +
+badge) are Phase 6 — see `phases.md`.
 
 ## Planning docs
 
@@ -44,11 +48,16 @@ from `dist/` the same way.
 npm run test
 ```
 
-Two suites exist:
+Four suites exist:
 - `src/lib/storage.test.ts` — CRUD, markdown add/re-sync semantics, checkpoint
-  wiring, and the pub/sub, against a mocked `chrome.storage.local`.
+  wiring, the pub/sub, and Phase 5 file-connection semantics, against a
+  mocked `chrome.storage.local`.
 - `src/lib/parser/parser.test.ts` — the checkpoint heuristics, per `rules.md`
   (the one place tests are non-negotiable).
+- `src/lib/time.test.ts` — relative-time/date-format boundary bucketing.
+- `src/lib/file-poll.test.ts` — the background worker's connected-file poll
+  loop (changed/identical/lapsed-permission/missing-handle/throwing project),
+  with a mocked chrome.storage and a mocked file-read layer.
 
 ## A note on versions
 

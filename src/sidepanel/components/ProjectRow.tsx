@@ -1,4 +1,6 @@
 import type { Project } from "../../lib/types";
+import { formatDate, relativeTime } from "../../lib/time";
+import { ProgressBar } from "./ProgressBar";
 
 interface Props {
   project: Project;
@@ -6,6 +8,9 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
 }
 
+// design.md §4 row: name + checkpoint + progress + "last worked" on one
+// continuous surface, separated by 1px --border-subtle dividers (no card
+// shadow), with a quiet --surface-raised hover (no scale/transform).
 export function ProjectRow({ project, onSelect, onDelete }: Props) {
   const categoryLabel =
     project.category === "custom" && project.customCategoryLabel
@@ -40,11 +45,26 @@ export function ProjectRow({ project, onSelect, onDelete }: Props) {
             {project.checkpoint.text}
           </span>
         )}
+        <div class="project-meta">
+          <ProgressBar
+            progressPercent={project.checkpoint.progressPercent}
+            detectedFrom={project.checkpoint.detectedFrom}
+            label={`Progress for ${project.name}`}
+          />
+          <span
+            class="project-last-worked"
+            title={`Last worked: ${formatDate(project.lastContentChangeAt)}`}
+          >
+            {relativeTime(project.lastContentChangeAt)}
+          </span>
+        </div>
       </div>
-      <span class="category-tag">{categoryLabel}</span>
-      <button type="button" class="btn-delete" onClick={handleDelete}>
-        Delete
-      </button>
+      <div class="project-side">
+        <span class={`category-tag category-tag--${project.category}`}>{categoryLabel}</span>
+        <button type="button" class="btn-delete" onClick={handleDelete}>
+          Delete
+        </button>
+      </div>
     </li>
   );
 }

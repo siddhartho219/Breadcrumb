@@ -12,10 +12,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addProject,
+  connectProjectFileSource,
   deleteProject,
   getProjects,
   PROJECTS_KEY,
   subscribeProjects,
+  syncFromFile,
   syncProjectContent,
   updateProject,
 } from "./storage";
@@ -268,6 +270,127 @@ describe("storage", () => {
 
     it("rejects re-sync for an unknown project id", async () => {
       await expect(syncProjectContent("ghost", "x")).rejects.toThrow(/ghost/);
+    });
+  });
+
+  describe("file connection (Phase 5)", () => {
+    it("creates a project with an fsa source when a handle id is provided", async () => {
+      const project = await addProject({
+        name: "Knit log",
+        category: "personal",
+        fsaHandleId: "handle-1",
+        mdRawContent: "# Knitting\n\nProgress: 40%",
+      });
+
+      expect(project.mdSource).toEqual({ type: "fsa", handleId: "handle-1" });
+      expect(project.mdRawContent).toContain("Progress: 40%");
+      expect(project.checkpoint.progressPercent).toBe(40);
+    });
+
+    it("syncFromFile updates content/checkpoint/timestamp but keeps the fsa source", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({
+          name: "A",
+          category: "personal",
+          fsaHandleId: "h1",
+          mdRawContent: "v1",
+        });
+
+        vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"));
+        const result = await syncFromFile(project.id, "# v2\n\nProgress: 30%");
+
+        expect(result.changed).toBe(true);
+        expect(result.project.mdRawContent).toBe("# v2\n\nProgress: 30%");
+        expect(result.project.lastContentChangeAt).toBe("2026-01-01T00:05:00.000Z");
+        expect(result.project.mdSource).toEqual({ type: "fsa", handleId: "h1" }); // unchanged
+        expect(result.project.checkpoint.progressPercent).toBe(30);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("syncFromFile is a no-op for identical content (no write, timestamp untouched)", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({
+          name: "A",
+          category: "personal",
+          fsaHandleId: "h1",
+          mdRawContent: "same",
+        });
+        const storedBefore = store.get(PROJECTS_KEY);
+
+        const result = await syncFromFile(project.id, "same");
+
+        expect(result.changed).toBe(false);
+        expect(result.project.lastContentChangeAt).toBe(project.lastContentChangeAt);
+        expect(store.get(PROJECTS_KEY)).toBe(storedBefore); // no write at all
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("syncFromFile rejects for an unknown project id", async () => {
+      await expect(syncFromFile("ghost", "x")).rejects.toThrow(/ghost/);
+    });
+
+    it("connectProjectFileSource switches a manual project to fsa and stores content", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({ name: "A", category: "personal", mdRawContent: "old" });
+
+        vi.setSystemTime(new Date("2026-01-01T00:05:00.000Z"));
+        const updated = await connectProjectFileSource(project.id, "h2", "new file content");
+
+        expect(updated.mdSource).toEqual({ type: "fsa", handleId: "h2" });
+        expect(updated.mdRawContent).toBe("new file content");
+        expect(updated.lastContentChangeAt).toBe("2026-01-01T00:05:00.000Z");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("connectProjectFileSource does not bump lastContentChangeAt for identical content", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      try {
+        const project = await addProject({
+          name: "A",
+          category: "personal",
+          mdRawContent: "same",
+        });
+
+        const updated = await connectProjectFileSource(project.id, "h3", "same");
+
+        expect(updated.mdSource).toEqual({ type: "fsa", handleId: "h3" });
+        expect(updated.mdRawContent).toBe("same");
+        // A pure source switch isn't "working on" the project.
+        expect(updated.lastContentChangeAt).toBe(project.lastContentChangeAt);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("connectProjectFileSource rejects for an unknown project id", async () => {
+      await expect(connectProjectFileSource("ghost", "h", "x")).rejects.toThrow(/ghost/);
+    });
+
+    it("manual re-sync overrides an fsa source (explicit override contract)", async () => {
+      const project = await addProject({
+        name: "A",
+        category: "personal",
+        fsaHandleId: "h1",
+        mdRawContent: "file content",
+      });
+
+      const result = await syncProjectContent(project.id, "manually pasted");
+
+      expect(result.changed).toBe(true);
+      expect(result.project.mdSource.type).toBe("manual");
     });
   });
 

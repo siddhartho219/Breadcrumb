@@ -11,7 +11,7 @@
 // their own state from return values, and `subscribeProjects()` lets any
 // context (background worker, options page) notify the panel of changes.
 
-import type { Category, Project } from "./types";
+import type { Category, MdSource, Project } from "./types";
 import { parse } from "./parser";
 
 export const PROJECTS_KEY = "projects";
@@ -22,6 +22,13 @@ export interface NewProjectInput {
   customCategoryLabel?: string;
   /** Optional at add time — Phase 2 lets the form collect it; empty keeps the default. */
   mdRawContent?: string;
+  /**
+   * Phase 5: when the form connected a local file, the IndexedDB handle id.
+   * When set, the project starts with mdSource: { type: "fsa" } and
+   * mdRawContent is the file's initial content. Must not be combined with a
+   * manual-paste intent — providing it makes the project file-connected.
+   */
+  fsaHandleId?: string;
 }
 
 /** Result of a re-sync: the stored project plus whether anything actually changed. */
@@ -89,7 +96,11 @@ export async function addProject(input: NewProjectInput): Promise<Project> {
     category: input.category,
     customCategoryLabel,
     mdRawContent: input.mdRawContent ?? "",
-    mdSource: { type: "manual", lastPastedAt: now },
+    // Phase 5: a connected file makes the project fsa-sourced from birth;
+    // otherwise it starts manual.
+    mdSource: input.fsaHandleId
+      ? { type: "fsa", handleId: input.fsaHandleId }
+      : { type: "manual", lastPastedAt: now },
     // Phase 3: checkpoint is derived from whatever content exists. parse()
     // never throws and returns the defined default for empty content.
     checkpoint: parse(input.mdRawContent ?? ""),
@@ -143,11 +154,28 @@ export async function updateProject(id: string, patch: Partial<Project>): Promis
 }
 
 /**
+ * Shared content-apply used by every path that lands new markdown: re-derives
+ * the checkpoint (Phase 3 invariant) and bumps `lastContentChangeAt` to `now`.
+ * Callers decide the source and whether a diff is required first.
+ */
+function applyContent(project: Project, newContent: string, source: MdSource, now: string): Project {
+  return {
+    ...project,
+    mdRawContent: newContent,
+    // Phase 3: checkpoint must always match the stored markdown.
+    checkpoint: parse(newContent),
+    mdSource: source,
+    lastContentChangeAt: now,
+  };
+}
+
+/**
  * Manual re-sync (phases.md Phase 2): replaces a project's markdown content
  * with freshly pasted/uploaded text. `lastContentChangeAt` ("last worked")
  * only moves when the new content actually differs from what's stored — an
  * identical re-sync performs no write at all. Re-syncing always records a
- * manual source, which also overrides a future fsa connection (Phase 5).
+ * manual source, which also overrides a connected file (Phase 5) — that's the
+ * explicit-override contract from phases.md.
  */
 export async function syncProjectContent(id: string, newContent: string): Promise<SyncResult> {
   let projects: Project[];
@@ -169,14 +197,7 @@ export async function syncProjectContent(id: string, newContent: string): Promis
   }
 
   const now = nowIso();
-  const updated: Project = {
-    ...current,
-    mdRawContent: newContent,
-    // Phase 3: re-derive the checkpoint from the new content on every change.
-    checkpoint: parse(newContent),
-    mdSource: { type: "manual", lastPastedAt: now },
-    lastContentChangeAt: now,
-  };
+  const updated = applyContent(current, newContent, { type: "manual", lastPastedAt: now }, now);
   projects[index] = updated;
 
   try {
@@ -185,6 +206,83 @@ export async function syncProjectContent(id: string, newContent: string): Promis
     throw new Error("Couldn't save changes — try again.", { cause: err });
   }
   return { project: updated, changed: true };
+}
+
+/**
+ * Phase 5: the background worker's write path. Same diff-before-write
+ * semantics as `syncProjectContent`, but it keeps the project's existing
+ * mdSource untouched — a file-connected project stays file-connected across
+ * polls. The manual override (which switches mdSource to manual) remains
+ * `syncProjectContent`. Used by lib/file-poll.ts.
+ */
+export async function syncFromFile(id: string, newContent: string): Promise<SyncResult> {
+  let projects: Project[];
+  try {
+    projects = await readProjects();
+  } catch (err) {
+    throw new Error("Couldn't load projects — try again.", { cause: err });
+  }
+
+  const index = projects.findIndex((p) => p.id === id);
+  if (index === -1) {
+    throw new Error(`Couldn't find a project with id "${id}".`);
+  }
+
+  const current = projects[index];
+  if (current.mdRawContent === newContent) {
+    return { project: current, changed: false };
+  }
+
+  const now = nowIso();
+  const updated = applyContent(current, newContent, current.mdSource, now);
+  projects[index] = updated;
+
+  try {
+    await writeProjects(projects);
+  } catch (err) {
+    throw new Error("Couldn't save changes — try again.", { cause: err });
+  }
+  return { project: updated, changed: true };
+}
+
+/**
+ * Phase 5: connect (or reconnect) a local file to an existing project.
+ * Sets mdSource to fsa and stores the file's content. `lastContentChangeAt`
+ * only moves when the content actually differs from what's stored — a pure
+ * source switch (manual → fsa with identical content) doesn't count as
+ * "working on" the project.
+ */
+export async function connectProjectFileSource(
+  id: string,
+  handleId: string,
+  content: string,
+): Promise<Project> {
+  let projects: Project[];
+  try {
+    projects = await readProjects();
+  } catch (err) {
+    throw new Error("Couldn't load projects — try again.", { cause: err });
+  }
+
+  const index = projects.findIndex((p) => p.id === id);
+  if (index === -1) {
+    throw new Error(`Couldn't find a project with id "${id}".`);
+  }
+
+  const current = projects[index];
+  const source: MdSource = { type: "fsa", handleId };
+  const updated =
+    current.mdRawContent === content
+      ? { ...current, mdSource: source }
+      : applyContent(current, content, source, nowIso());
+  projects[index] = updated;
+
+  try {
+    await writeProjects(projects);
+  } catch (err) {
+    throw new Error("Couldn't save the file connection — try again.", { cause: err });
+  }
+  return updated;
 }
 
 export async function deleteProject(id: string): Promise<void> {
